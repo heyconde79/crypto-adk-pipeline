@@ -8,22 +8,24 @@ Uses Application Default Credentials rather than hardcoded credentials.
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from google.cloud.storage import Bucket, Client
 
-load_dotenv()
-
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 def _get_gcs_bucket() -> Bucket:
-    bucket_name = GCS_BUCKET_NAME
+    env_values = dotenv_values(ENV_FILE)
+    bucket_name = (os.getenv("GCS_BUCKET_NAME") or "").strip() or (
+        env_values.get("GCS_BUCKET_NAME") or ""
+    ).strip()
     if not bucket_name:
         raise RuntimeError(
             "GCS_BUCKET_NAME is not set. Copy .env.example to .env and enter your bucket name."
         )
-    project_id = GOOGLE_CLOUD_PROJECT
+    project_id = (os.getenv("GOOGLE_CLOUD_PROJECT") or "").strip() or (
+        env_values.get("GOOGLE_CLOUD_PROJECT") or ""
+    ).strip()
     if not project_id:
         raise RuntimeError(
             "GOOGLE_CLOUD_PROJECT is not set. Add your Google Cloud project ID to .env."

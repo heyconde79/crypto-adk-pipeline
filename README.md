@@ -42,10 +42,14 @@ crypto-adk-pipeline/
    ```
 
 3. Create a Google Cloud Storage bucket, then copy `.env.example` to `.env` and set the
-   bucket name and Google Cloud project ID:
+   bucket name and Google Cloud project ID. Configure Gemini access with either a
+   Google AI Studio API key or Vertex AI:
    ```bash
    cp .env.example .env
    ```
+   For an API key, uncomment and set `GOOGLE_API_KEY`. For Vertex AI, set
+   `GOOGLE_GENAI_USE_VERTEXAI=true` and `GOOGLE_CLOUD_LOCATION`; authenticate with ADC
+   as described below.
    **Never commit `.env`** — it's already in `.gitignore`.
 
 4. Install the Google Cloud CLI, then authenticate locally with Application Default Credentials:
@@ -74,29 +78,26 @@ Edit the `COIN_IDS` list at the top of `src/ingestion.py` (CoinGecko coin IDs, e
 
 This project uses CoinGecko's fully public, keyless endpoints
 (`https://api.coingecko.com/api/v3/...`). No signup or API key is required, but the
-free tier is rate-limited (roughly 5–15 requests/minute per IP), so `ingestion.py`
-paces its requests and only pulls the coins you configure. If you start seeing HTTP 429
-responses, increase the delay between calls in `ingestion.py`.
+free tier is rate-limited (roughly 5–15 requests/minute per IP). `ingestion.py` waits
+15 seconds between calls and retries HTTP 429 responses after 30 and 60 seconds. A run
+can still fail if the shared IP quota remains exhausted.
 
-## A note on google-adk
+## Agent workflow
 
-This scaffold writes ingestion/processing/storage/visualization as **plain, independently
-testable Python functions first** (`src/ingestion.py` etc.), then wraps them as ADK tools
-in `src/tools.py` and chains them in `src/agents.py`. This split exists so you can debug
-each step on its own before adding the agent layer on top — check `pip show google-adk`
-and the ADK docs for the exact current Agent / SequentialAgent import paths and
-constructor signatures, since the API surface can change between versions and this
-scaffold was written without being able to verify against the live package.
+`src/agents.py` defines four ADK agents in a `SequentialAgent`: ingestion, processing,
+storage, and visualization. Each agent invokes its assigned tool in `src/tools.py`.
+Run the workflow with `python src/main.py`. Use `python src/main.py --direct` only to
+debug the tool functions without ADK.
 
-## Future Improvements doc
+## Tests
 
-Don't forget the second deliverable: a short Word/PDF doc on future improvements
-(scalability, error handling, monitoring, scheduling, testing, security, cost, data
-quality). A few starter ideas based on this pipeline:
-- Replace local credentials with a proper secrets manager (Google Secret Manager)
-  before any real deployment.
-- Add retry/backoff logic around CoinGecko 429s instead of failing the run.
-- Schedule the pipeline (cron, Google Cloud Scheduler, or Airflow) instead of manual runs.
-- Add a data quality check (e.g. reject a day's data if price is null or zero) before
-  it's written to GCS.
-- Add logging/monitoring (Google Cloud Logging) so failed runs are visible without checking manually.
+Run the focused unit tests with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Future improvements
+
+See [FUTURE_IMPROVEMENTS.md](./FUTURE_IMPROVEMENTS.md) for proposed improvements to
+scalability, reliability, observability, testing, security, cost, and data quality.

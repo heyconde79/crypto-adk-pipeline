@@ -24,8 +24,33 @@ DAYS_OF_HISTORY = 30  # how many days of daily history to pull per coin
 BASE_URL = "https://api.coingecko.com/api/v3"
 RAW_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
 
-# Be polite to the free, keyless tier (rough limit: ~5-15 req/min per IP).
-REQUEST_DELAY_SECONDS = 10.0
+# Pace requests and use bounded backoff on HTTP 429 responses.
+REQUEST_DELAY_SECONDS = 15.0
+RATE_LIMIT_RETRY_DELAYS_SECONDS = (30.0, 60.0)
+
+
+def _get_json(url: str, params: dict[str, str | int]) -> dict | list:
+    """Make a CoinGecko request, retrying rate limits with bounded backoff."""
+    retry_number = 0
+    while True:
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response.json()
+
+        if retry_number == len(RATE_LIMIT_RETRY_DELAYS_SECONDS):
+            response.raise_for_status()
+            raise requests.HTTPError("CoinGecko returned HTTP 429 after retries", response=response)
+
+        delay = RATE_LIMIT_RETRY_DELAYS_SECONDS[retry_number]
+        print(
+            f"[ingestion] CoinGecko rate limit reached; "
+            f"retrying in {delay:g}s ({retry_number + 1}/{len(RATE_LIMIT_RETRY_DELAYS_SECONDS)})"
+        )
+        time.sleep(delay)
+        retry_number += 1
+
+    raise RuntimeError("CoinGecko request retry loop exited unexpectedly")
 
 
 def fetch_current_market_snapshot(coin_ids: list[str] = COIN_IDS, vs_currency: str = VS_CURRENCY) -> list[dict]:
@@ -37,18 +62,14 @@ def fetch_current_market_snapshot(coin_ids: list[str] = COIN_IDS, vs_currency: s
         "order": "market_cap_desc",
         "price_change_percentage": "24h",
     }
-    response = requests.get(url, params=params, timeout=15)
-    response.raise_for_status()
-    return response.json()
+    return _get_json(url, params)
 
 
 def fetch_market_chart(coin_id: str, days: int = DAYS_OF_HISTORY, vs_currency: str = VS_CURRENCY) -> dict:
     """Fetch daily historical price series for a single coin."""
     url = f"{BASE_URL}/coins/{coin_id}/market_chart"
     params = {"vs_currency": vs_currency, "days": days, "interval": "daily"}
-    response = requests.get(url, params=params, timeout=15)
-    response.raise_for_status()
-    return response.json()
+    return _get_json(url, params)
 
 
 def run_ingestion(coin_ids: list[str] = COIN_IDS) -> dict:
@@ -60,12 +81,11 @@ def run_ingestion(coin_ids: list[str] = COIN_IDS) -> dict:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     snapshot = fetch_current_market_snapshot(coin_ids)
-    time.sleep(REQUEST_DELAY_SECONDS)
 
     charts = {}
     for coin_id in coin_ids:
-        charts[coin_id] = fetch_market_chart(coin_id)
         time.sleep(REQUEST_DELAY_SECONDS)
+        charts[coin_id] = fetch_market_chart(coin_id)
 
     payload = {
         "fetched_at": timestamp,

@@ -24,7 +24,7 @@ from visualize import run_visualization
 _PIPELINE_STATE: dict = {}
 
 
-def ingest_crypto_data(coin_ids: list[str] = None) -> dict:
+def ingest_crypto_data(coin_ids: list[str] | None = None) -> dict:
     """
     Tool: pulls current + historical market data for the configured coins from
     CoinGecko's free public API and saves the raw JSON locally.
@@ -36,6 +36,7 @@ def ingest_crypto_data(coin_ids: list[str] = None) -> dict:
         A small JSON-serializable summary (not the full payload) confirming what
         was fetched, for the agent to report back.
     """
+    _PIPELINE_STATE.clear()
     ids = coin_ids or COIN_IDS
     payload = run_ingestion(ids)
     _PIPELINE_STATE["payload"] = payload
