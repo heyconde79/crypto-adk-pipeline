@@ -1,0 +1,5 @@
+google-adk
+requests
+google-cloud-storage
+pandas
+python-dotenv
